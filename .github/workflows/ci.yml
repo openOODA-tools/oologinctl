@@ -1,0 +1,64 @@
+# House-law verification gate (openOODA-tools CI template).
+#
+# AGENTS.md §7 requires the verification gate to pass before any commit or
+# release is certified. This workflow exists so that gate actually runs.
+#
+# Deliberately minimal: the ONLY substitution is the tool name. Everything
+# else — toolchain layout, oodar build, sandbox roots — is identical across
+# every tool, so there is nothing to hand-adapt and nothing to drift.
+#
+# `make verify` is the single entry point. The individual targets
+# (line-cap, academy, density, check) are NOT called directly: only some
+# tools define them, and the rest route through qa/verify_pages.py. Calling
+# the umbrella target works for every tool in the org.
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: House-law verification gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: oologinctl
+
+      - uses: actions/checkout@v4
+        with:
+          repository: openOODA/oodac
+          path: oodac
+
+      - uses: actions/checkout@v4
+        with:
+          repository: openOODA/oodar
+          path: oodar
+
+      - uses: actions/checkout@v4
+        with:
+          repository: openOODA/std
+          path: std
+
+      - name: Require clang
+        run: |
+          if ! command -v clang >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y clang
+          fi
+          command -v clang >/dev/null || { echo "clang required for oodac build"; exit 1; }
+
+      - name: Build oodar runtime libraries
+        working-directory: ${{ github.workspace }}
+        run: make -C oodar/scripts -f Makefile modular
+
+      - name: Verify
+        working-directory: ${{ github.workspace }}/oologinctl
+        env:
+          OODA_COMPILER: ${{ github.workspace }}/oodac/bin/oodac
+          OODA_FS_READDIR: ${{ github.workspace }}
+          OODA_FS_WRITEDIR: ${{ github.workspace }}
+          OODA_NO_JAIL: "1"
+        run: make verify
